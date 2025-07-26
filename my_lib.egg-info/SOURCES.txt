@@ -1,0 +1,8 @@
+setup.py
+my_lib/__init__.py
+my_lib.egg-info/PKG-INFO
+my_lib.egg-info/SOURCES.txt
+my_lib.egg-info/dependency_links.txt
+my_lib.egg-info/top_level.txt
+my_lib/dp_lib/__init__.py
+my_lib/dp_lib/config.py

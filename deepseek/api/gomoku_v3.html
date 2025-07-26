@@ -1,0 +1,383 @@
+# Classical Theme Gomoku (Five-in-a-Row) Game
+
+Here's a complete HTML file with a classical Chinese-themed Gomoku game featuring bamboo leaves decoration and English instructions:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classical Gomoku Game</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f8f4e9;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><path d="M20,10 Q30,5 40,10 T60,10 T80,10" stroke="%2342a56e" fill="none" stroke-width="1" opacity="0.3"/></svg>');
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #5a3e2a;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        h1 {
+            color: #8b4513;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-style: italic;
+            margin-bottom: 30px;
+            color: #6d4c41;
+        }
+
+        .game-container {
+            position: relative;
+            margin: 20px auto;
+            background-color: #e6d5b8;
+            background-image: linear-gradient(to right, #d9c7a7 1px, transparent 1px), 
+                              linear-gradient(to bottom, #d9c7a7 1px, transparent 1px);
+            background-size: 40px 40px;
+            border: 10px solid #8b4513;
+            border-radius: 5px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(15, 40px);
+            grid-template-rows: repeat(15, 40px);
+            position: relative;
+            z-index: 1;
+        }
+
+        .cell {
+            width: 40px;
+            height: 40px;
+            box-sizing: border-box;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .cell::before, .cell::after {
+            content: '';
+            position: absolute;
+            background-color: #8b4513;
+        }
+
+        .cell::before {
+            width: 100%;
+            height: 1px;
+            top: 50%;
+            left: 0;
+        }
+
+        .cell::after {
+            width: 1px;
+            height: 100%;
+            left: 50%;
+            top: 0;
+        }
+
+        .stone {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            top: 4px;
+            left: 4px;
+            z-index: 2;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .black {
+            background: radial-gradient(circle at 30% 30%, #666, #000);
+        }
+
+        .white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+        }
+
+        .bamboo-leaf {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            opacity: 0.6;
+            z-index: 0;
+        }
+
+        .leaf1 {
+            top: -30px;
+            left: -30px;
+            transform: rotate(45deg);
+        }
+
+        .leaf2 {
+            bottom: -30px;
+            right: -30px;
+            transform: rotate(225deg);
+        }
+
+        .leaf3 {
+            top: 50%;
+            right: -30px;
+            transform: rotate(135deg);
+        }
+
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        button {
+            background-color: #8b4513;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #a0522d;
+        }
+
+        .instructions {
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border: 1px solid #d9c7a7;
+            max-width: 600px;
+        }
+
+        .instructions h2 {
+            color: #8b4513;
+            margin-top: 0;
+        }
+
+        .status {
+            font-size: 1.2em;
+            margin: 10px 0;
+            font-weight: bold;
+            color: #5a3e2a;
+        }
+
+        .bamboo-svg {
+            position: absolute;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Classical Gomoku</h1>
+        <div class="subtitle">The Ancient Game of Five in a Row</div>
+        
+        <div class="status" id="status">Black's turn</div>
+        
+        <div class="game-container">
+            <!-- Bamboo leaves decoration -->
+            <svg class="bamboo-svg leaf1" width="60" height="60" viewBox="0 0 100 100">
+                <path d="M10,50 Q35,30 60,50 T110,50" stroke="#4a7c59" fill="none" stroke-width="8"/>
+                <path d="M30,45 L35,30 L40,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M50,45 L55,30 L60,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M70,45 L75,30 L80,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M90,45 L95,30 L100,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+            </svg>
+            
+            <svg class="bamboo-svg leaf2" width="60" height="60" viewBox="0 0 100 100">
+                <path d="M10,50 Q35,30 60,50 T110,50" stroke="#4a7c59" fill="none" stroke-width="8"/>
+                <path d="M30,45 L35,30 L40,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M50,45 L55,30 L60,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M70,45 L75,30 L80,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M90,45 L95,30 L100,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+            </svg>
+            
+            <svg class="bamboo-svg leaf3" width="60" height="60" viewBox="0 0 100 100">
+                <path d="M10,50 Q35,30 60,50 T110,50" stroke="#4a7c59" fill="none" stroke-width="8"/>
+                <path d="M30,45 L35,30 L40,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M50,45 L55,30 L60,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M70,45 L75,30 L80,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+                <path d="M90,45 L95,30 L100,45" stroke="#4a7c59" fill="none" stroke-width="2"/>
+            </svg>
+            
+            <div id="game-board"></div>
+        </div>
+        
+        <div class="controls">
+            <button id="restart">Restart Game</button>
+        </div>
+        
+        <div class="instructions">
+            <h2>How to Play</h2>
+            <p><strong>Gomoku</strong>, also known as Five in a Row, is a classic strategy game where two players alternate placing stones on a grid.</p>
+            <ul>
+                <li>Black plays first, then players alternate turns</li>
+                <li>The goal is to be the first to get five stones of your color in a row (horizontally, vertically, or diagonally)</li>
+                <li>Click on any empty intersection to place your stone</li>
+                <li>The game ends when one player achieves five in a row or when the board is full</li>
+            </ul>
+            <p>This ancient game originated in China over 2,000 years ago and remains popular today for its simple rules but deep strategy.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const boardSize = 15;
+            const board = document.getElementById('game-board');
+            const statusDisplay = document.getElementById('status');
+            const restartButton = document.getElementById('restart');
+            
+            let gameState = Array(boardSize).fill().map(() => Array(boardSize).fill(null));
+            let currentPlayer = 'black';
+            let gameActive = true;
+            
+            // Initialize the board
+            function initializeBoard() {
+                board.innerHTML = '';
+                gameState = Array(boardSize).fill().map(() => Array(boardSize).fill(null));
+                currentPlayer = 'black';
+                gameActive = true;
+                statusDisplay.textContent = "Black's turn";
+                
+                for (let i = 0; i < boardSize; i++) {
+                    for (let j = 0; j < boardSize; j++) {
+                        const cell = document.createElement('div');
+                        cell.classList.add('cell');
+                        cell.dataset.row = i;
+                        cell.dataset.col = j;
+                        cell.addEventListener('click', handleCellClick);
+                        board.appendChild(cell);
+                    }
+                }
+            }
+            
+            // Handle cell click
+            function handleCellClick(e) {
+                if (!gameActive) return;
+                
+                const row = parseInt(e.target.dataset.row);
+                const col = parseInt(e.target.dataset.col);
+                
+                if (gameState[row][col] !== null) return;
+                
+                gameState[row][col] = currentPlayer;
+                const stone = document.createElement('div');
+                stone.classList.add('stone', currentPlayer);
+                e.target.appendChild(stone);
+                
+                if (checkWin(row, col)) {
+                    statusDisplay.textContent = `${currentPlayer === 'black' ? 'Black' : 'White'} wins!`;
+                    gameActive = false;
+                    return;
+                }
+                
+                if (checkDraw()) {
+                    statusDisplay.textContent = "Game ended in a draw!";
+                    gameActive = false;
+                    return;
+                }
+                
+                currentPlayer = currentPlayer === 'black' ? 'white' : 'black';
+                statusDisplay.textContent = `${currentPlayer === 'black' ? 'Black' : 'White'}'s turn`;
+            }
+            
+            // Check for win condition
+            function checkWin(row, col) {
+                const directions = [
+                    [0, 1],  // horizontal
+                    [1, 0],  // vertical
+                    [1, 1],  // diagonal down-right
+                    [1, -1]  // diagonal down-left
+                ];
+                
+                for (const [dx, dy] of directions) {
+                    let count = 1;
+                    
+                    // Check in positive direction
+                    for (let i = 1; i < 5; i++) {
+                        const newRow = row + i * dx;
+                        const newCol = col + i * dy;
+                        
+                        if (newRow < 0 || newRow >= boardSize || newCol < 0 || newCol >= boardSize || 
+                            gameState[newRow][newCol] !== currentPlayer) {
+                            break;
+                        }
+                        count++;
+                    }
+                    
+                    // Check in negative direction
+                    for (let i = 1; i < 5; i++) {
+                        const newRow = row - i * dx;
+                        const newCol = col - i * dy;
+                        
+                        if (newRow < 0 || newRow >= boardSize || newCol < 0 || newCol >= boardSize || 
+                            gameState[newRow][newCol] !== currentPlayer) {
+                            break;
+                        }
+                        count++;
+                    }
+                    
+                    if (count >= 5) return true;
+                }
+                
+                return false;
+            }
+            
+            // Check for draw
+            function checkDraw() {
+                return gameState.every(row => row.every(cell => cell !== null));
+            }
+            
+            // Restart game
+            restartButton.addEventListener('click', initializeBoard);
+            
+            // Initialize the game
+            initializeBoard();
+        });
+    </script>
+</body>
+</html>
+```
+
+## Features of this Gomoku Game:
+
+1. **Classical Chinese Theme**:
+   - Antique parchment-like background
+   - Wooden game board with traditional grid
+   - Decorative bamboo leaves in SVG format (embedded directly in the HTML)
+
+2. **Game Functionality**:
+   - 15×15 game board
+   - Black and white stones with subtle gradients
+   - Turn indicator showing whose turn it is
+   - Win detection (5 in a row horizontally, vertically, or diagonally)
+   - Draw detection
+   - Restart button
+
+3. **English Instructions**:
+   - Clear rules of the game
+   - Historical context about Gomoku
+   - Gameplay instructions
+
+4. **Self-contained**:
+   - All code (HTML, CSS, JavaScript) in one file
+   - No external dependencies
+   - SVG graphics embedded directly
+
+Simply copy this entire code into an HTML file and open it in any modern browser to play the game. The bamboo leaves are created with SVG paths and positioned decoratively around the game board.
