@@ -3,7 +3,7 @@ from openai import OpenAI
 from my_lib.dp_lib import config
 
 # 从环境变量获取 DeepSeek API Key
-api_key = config.Settings().deepseek_api_key
+api_key = os.getenv("DEEPSEEK_API_KEY")
 if not api_key:
     raise ValueError("请设置 DEEPSEEK_API_KEY 环境变量")
 
