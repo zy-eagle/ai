@@ -1,6 +1,5 @@
 import os
 from openai import OpenAI
-from my_lib.dp_lib import config
 
 # 从环境变量获取 DeepSeek API Key
 api_key = os.getenv("DEEPSEEK_API_KEY")
