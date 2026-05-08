@@ -1,0 +1,29 @@
+{
+  "name": "mcp-query-server",
+  "version": "0.1.0",
+  "description": "MCP server for querying authenticated APIs with session/AKSK support",
+  "type": "module",
+  "bin": {
+    "mcp-query-server": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "tsc --watch"
+  },
+  "files": [
+    "build",
+    ".env.example",
+    "README.md"
+  ],
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

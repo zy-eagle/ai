@@ -2,3 +2,10 @@
 ./.venv/
 ./nohup.out
 .idea/
+
+# Node.js
+node_modules/
+
+# Secrets
+.env
+*.env.local
