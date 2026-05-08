@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "query-tenant": {
+      "command": "npx",
+      "args": ["-y", "--registry", "http://192.168.231.129:4873", "mcp-query-tenant"],
+      "env": {
+        "ENV_FILE": "D:\\code\\python\\ai\\mcp\\query_tenant\\.env"
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 function loadEnvFile(filePath) {
     if (!existsSync(filePath))
         return;
@@ -20,13 +21,10 @@ function loadEnvFile(filePath) {
     }
 }
 export function loadCredentials() {
+    const thisDir = dirname(fileURLToPath(import.meta.url));
+    const defaultEnv = resolve(thisDir, '..', '.env');
     const envFile = process.env.ENV_FILE;
-    if (envFile) {
-        loadEnvFile(resolve(envFile));
-    }
-    else {
-        loadEnvFile(resolve(import.meta.dirname, '..', '.env'));
-    }
+    loadEnvFile(envFile ? resolve(envFile) : defaultEnv);
     const mode = (process.env.AUTH_MODE ?? 'session');
     if (mode === 'aksk') {
         const accessKey = process.env.ACCESS_KEY?.trim();

@@ -1,11 +1,9 @@
 {
-  "name": "mcp-query-server",
+  "name": "mcp-query-tenant",
   "version": "0.1.0",
   "description": "MCP server for querying authenticated APIs with session/AKSK support",
   "type": "module",
-  "bin": {
-    "mcp-query-server": "./build/index.js"
-  },
+  "bin": "build/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node build/index.js",

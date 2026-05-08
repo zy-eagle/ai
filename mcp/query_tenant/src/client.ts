@@ -78,7 +78,13 @@ export class AuthenticatedClient {
         clearTimeout(timer);
         this.recordSuccess();
 
-        const data = await response.json().catch(() => null);
+        const text = await response.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = text || null;
+        }
 
         if (!response.ok) {
           return {
