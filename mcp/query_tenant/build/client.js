@@ -80,7 +80,8 @@ export class AuthenticatedClient {
         };
     }
     buildUrl(path, query) {
-        const url = new URL(path, this.baseUrl);
+        const fullPath = `/api/v1/${path.replace(/^\/+/, '')}`;
+        const url = new URL(fullPath, this.baseUrl);
         if (query) {
             for (const [k, v] of Object.entries(query)) {
                 url.searchParams.set(k, v);

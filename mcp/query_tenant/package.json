@@ -1,6 +1,6 @@
 {
   "name": "mcp-query-tenant",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "MCP server for querying authenticated APIs with session/AKSK support",
   "type": "module",
   "bin": "build/index.js",
