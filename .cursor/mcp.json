@@ -6,6 +6,13 @@
       "env": {
         "ENV_FILE": "D:\\code\\python\\ai\\mcp\\query_tenant\\.env"
       }
+    },
+    "query-tenant-go": {
+      "command": "D:\\code\\python\\ai\\mcp\\query_tenant_go\\query_tenant_go.exe",
+      "args": [],
+      "env": {
+        "ENV_FILE": "D:\\code\\python\\ai\\mcp\\query_tenant_go\\.env"
+      }
     }
   }
 }
