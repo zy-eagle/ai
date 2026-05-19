@@ -133,6 +133,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     }),
 
+    vscode.commands.registerCommand('cursorImBridge.storeSecret', async () => {
+      if (!bridge) return;
+      const adapterType = await vscode.window.showQuickPick(
+        ['feishu', 'wecom', 'telegram', 'dingtalk', 'custom'],
+        { placeHolder: 'Select adapter type' }
+      );
+      if (!adapterType) return;
+
+      const fieldMap: Record<string, string[]> = {
+        feishu:   ['appSecret', 'encryptKey', 'verificationToken'],
+        wecom:    ['corpSecret', 'encodingAESKey'],
+        telegram: ['botToken'],
+        dingtalk: ['appSecret', 'robotSecret'],
+        custom:   ['credentials'],
+      };
+      const field = await vscode.window.showQuickPick(
+        fieldMap[adapterType] || [],
+        { placeHolder: 'Select secret field to store' }
+      );
+      if (!field) return;
+
+      const value = await vscode.window.showInputBox({
+        prompt: `Enter value for ${adapterType}.${field}`,
+        password: true,
+        placeHolder: 'Value will be stored in OS keychain, not settings.json',
+      });
+      if (!value) return;
+
+      await bridge.storeAdapterSecret(adapterType, field, value);
+      vscode.window.showInformationMessage(
+        `✅ ${adapterType}.${field} stored in OS keychain. You can remove it from settings.json.`
+      );
+    }),
+
     vscode.commands.registerCommand('cursorImBridge.toggleAutoReply', () => {
       if (!bridge) return;
       const current = bridge.isAutoReplyEnabled();
@@ -298,12 +332,16 @@ class MessagePanel {
     messages: Array<{ adapterId: string; adapterType: string; direction: string; channelId: string; senderName?: string; senderId: string; content: string; timestamp: number }>,
     adapters: Array<{ id: string; type: string; name: string; status: string }>
   ): string {
+    // 每次生成随机 nonce，防止 XSS 注入内联脚本
+    const nonce = this.generateNonce();
+    const webview = this.panel.webview;
+
     const msgHtml = messages
       .slice(-50)
       .map(
         (m) => `
-      <div class="message ${m.direction}">
-        <span class="badge">${m.adapterType}</span>
+      <div class="message ${this.escapeHtml(m.direction)}">
+        <span class="badge">${this.escapeHtml(m.adapterType)}</span>
         <span class="sender">${this.escapeHtml(m.senderName || m.senderId)}</span>
         <span class="time">${new Date(m.timestamp).toLocaleTimeString()}</span>
         <div class="content">${this.escapeHtml(m.content)}</div>
@@ -313,7 +351,7 @@ class MessagePanel {
 
     const adapterOptions = adapters
       .filter((a) => a.status === 'connected')
-      .map((a) => `<option value="${a.id}">${this.escapeHtml(a.name)}</option>`)
+      .map((a) => `<option value="${this.escapeHtml(a.id)}">${this.escapeHtml(a.name)}</option>`)
       .join('');
 
     return `<!DOCTYPE html>
@@ -321,6 +359,7 @@ class MessagePanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
   <style>
     body { font-family: var(--vscode-font-family); padding: 10px; }
     .message { padding: 8px; margin: 4px 0; border-radius: 6px; border: 1px solid var(--vscode-panel-border); }
@@ -351,7 +390,7 @@ class MessagePanel {
     <input id="msgInput" placeholder="Type a message..." />
     <button onclick="sendMsg()">Send</button>
   </div>
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     function sendMsg() {
       const adapterId = document.getElementById('adapter').value;
@@ -379,7 +418,13 @@ class MessagePanel {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private generateNonce(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   }
 
   private dispose(): void {

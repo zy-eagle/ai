@@ -43,6 +43,10 @@
       {
         "command": "cursorImBridge.processPrompt",
         "title": "IM Bridge: Process Prompt via CLI"
+      },
+      {
+        "command": "cursorImBridge.storeSecret",
+        "title": "IM Bridge: Store Adapter Secret (Keychain)"
       }
     ],
     "configuration": {

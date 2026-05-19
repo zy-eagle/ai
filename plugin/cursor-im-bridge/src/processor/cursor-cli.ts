@@ -42,12 +42,18 @@ export class CursorCLI {
    * 执行 Cursor CLI 命令 (使用 Agent 模式处理任务)
    */
   async execute(prompt: string, options?: { cwd?: string; timeout?: number }): Promise<CursorCLIResult> {
+    const sanitized = this.sanitizePrompt(prompt);
+    if (!sanitized.ok) {
+      return { success: false, output: '', error: sanitized.reason, exitCode: null, duration: 0 };
+    }
+
     const cwd = options?.cwd || this.defaultCwd;
     const timeout = options?.timeout || this.defaultTimeout;
     const startTime = Date.now();
 
     return new Promise((resolve) => {
-      const args = ['agent', '--message', prompt];
+      // shell: false — args 数组直接传给进程，不经过 shell 解释，防止命令注入
+      const args = ['agent', '--message', sanitized.value];
       let stdout = '';
       let stderr = '';
       let killed = false;
@@ -55,7 +61,7 @@ export class CursorCLI {
       const proc: ChildProcess = spawn(this.cliPath, args, {
         cwd,
         env: { ...process.env, ...this.env },
-        shell: true,
+        shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -118,12 +124,17 @@ export class CursorCLI {
     onChunk: (chunk: string) => void,
     options?: { cwd?: string; timeout?: number }
   ): Promise<CursorCLIResult> {
+    const sanitized = this.sanitizePrompt(prompt);
+    if (!sanitized.ok) {
+      return { success: false, output: '', error: sanitized.reason, exitCode: null, duration: 0 };
+    }
+
     const cwd = options?.cwd || this.defaultCwd;
     const timeout = options?.timeout || this.defaultTimeout;
     const startTime = Date.now();
 
     return new Promise((resolve) => {
-      const args = ['agent', '--message', prompt];
+      const args = ['agent', '--message', sanitized.value];
       let stdout = '';
       let stderr = '';
       let killed = false;
@@ -131,7 +142,7 @@ export class CursorCLI {
       const proc: ChildProcess = spawn(this.cliPath, args, {
         cwd,
         env: { ...process.env, ...this.env },
-        shell: true,
+        shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -183,7 +194,7 @@ export class CursorCLI {
   async isAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
       const proc = spawn(this.cliPath, ['--version'], {
-        shell: true,
+        shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -209,7 +220,7 @@ export class CursorCLI {
     return new Promise((resolve) => {
       let output = '';
       const proc = spawn(this.cliPath, ['--version'], {
-        shell: true,
+        shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -239,5 +250,30 @@ export class CursorCLI {
       default:
         return 'cursor';
     }
+  }
+
+  /**
+   * 对 prompt 内容进行安全验证
+   * - 限制最大长度，防止超大 payload
+   * - 拒绝包含 null 字节（防止参数截断攻击）
+   */
+  private sanitizePrompt(
+    prompt: string
+  ): { ok: true; value: string } | { ok: false; reason: string } {
+    const MAX_LENGTH = 8000;
+
+    if (!prompt || !prompt.trim()) {
+      return { ok: false, reason: 'Prompt is empty' };
+    }
+
+    if (prompt.length > MAX_LENGTH) {
+      return { ok: false, reason: `Prompt exceeds maximum length of ${MAX_LENGTH} characters` };
+    }
+
+    if (prompt.includes('\0')) {
+      return { ok: false, reason: 'Prompt contains invalid null byte' };
+    }
+
+    return { ok: true, value: prompt.trim() };
   }
 }

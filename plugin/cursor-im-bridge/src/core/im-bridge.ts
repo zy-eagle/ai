@@ -4,6 +4,7 @@ import { AdapterRegistry } from './adapter-registry';
 import { MessageBus } from './message-bus';
 import { WebhookServer } from './webhook-server';
 import { TaskProcessor, TaskConfig, TaskResult } from '../processor';
+import { SecureStore } from '../utils/secure-store';
 
 /**
  * 核心控制器 — 管理适配器生命周期、消息路由、webhook 分发和任务处理
@@ -16,11 +17,16 @@ export class IMBridge {
   private outputChannel: vscode.OutputChannel;
   private statusBarItem: vscode.StatusBarItem;
   private autoReplyEnabled: boolean = false;
+  private secureStore: SecureStore;
 
   constructor(private context: vscode.ExtensionContext) {
     this.registry = new AdapterRegistry();
     this.messageBus = new MessageBus();
-    this.webhookServer = new WebhookServer(this.getWebhookPort());
+    this.secureStore = new SecureStore(context.secrets);
+    this.webhookServer = new WebhookServer(
+      this.getWebhookPort(),
+      this.getWebhookSecrets()
+    );
     this.outputChannel = vscode.window.createOutputChannel('IM Bridge');
     this.statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -40,7 +46,9 @@ export class IMBridge {
     for (const config of configs) {
       if (!config.enabled) continue;
       try {
-        const adapter = this.registry.create(config);
+        // 优先从 OS 钥匙链（SecretStorage）加载敏感凭证，覆盖 settings.json 中的明文值
+        const secureConfig = await this.mergeSecureCredentials(config);
+        const adapter = this.registry.create(secureConfig);
         this.messageBus.attach(adapter);
         this.log(`Adapter registered: ${adapter.displayName} (${adapter.id})`);
 
@@ -282,10 +290,70 @@ export class IMBridge {
       .get<number>('webhookPort', 3927);
   }
 
+  private getWebhookSecrets() {
+    const configs = this.getAdapterConfigs();
+    const secrets: import('./webhook-server').WebhookSecrets = {};
+
+    for (const cfg of configs) {
+      const c = cfg.config as Record<string, unknown>;
+      if (cfg.type === 'feishu') {
+        secrets.feishu = {
+          verificationToken: c.verificationToken as string | undefined,
+          encryptKey: c.encryptKey as string | undefined,
+        };
+      } else if (cfg.type === 'dingtalk') {
+        secrets.dingtalk = { robotSecret: c.robotSecret as string | undefined };
+      } else if (cfg.type === 'wecom') {
+        secrets.wecom = { token: c.token as string | undefined };
+      }
+    }
+    return secrets;
+  }
+
   private getAdapterConfigs(): AdapterConfig[] {
     return vscode.workspace
       .getConfiguration('cursorImBridge')
       .get<AdapterConfig[]>('adapters', []);
+  }
+
+  /**
+   * 将 SecretStorage 中的凭证合并到适配器配置，覆盖 settings.json 明文值。
+   * SecretStorage 优先级高于 settings.json，确保敏感字段不暴露在配置文件中。
+   */
+  private async mergeSecureCredentials(config: AdapterConfig): Promise<AdapterConfig> {
+    const sensitiveFields: Record<string, string[]> = {
+      feishu:   ['appSecret', 'encryptKey', 'verificationToken'],
+      wecom:    ['corpSecret', 'encodingAESKey'],
+      telegram: ['botToken'],
+      dingtalk: ['appSecret', 'robotSecret'],
+      custom:   ['credentials'],
+    };
+
+    const fields = sensitiveFields[config.type] || [];
+    if (fields.length === 0) return config;
+
+    const mergedConfig = { ...config.config } as Record<string, unknown>;
+    let hasMerged = false;
+
+    for (const field of fields) {
+      const stored = await this.secureStore.getAdapterSecret(config.type, field);
+      if (stored) {
+        mergedConfig[field] = stored;
+        hasMerged = true;
+      }
+    }
+
+    if (!hasMerged) return config;
+
+    return { ...config, config: mergedConfig };
+  }
+
+  /**
+   * 将凭证保存到 SecretStorage（推荐用户调用，取代直接写 settings.json）
+   */
+  async storeAdapterSecret(adapterType: string, field: string, value: string): Promise<void> {
+    await this.secureStore.setAdapterSecret(adapterType, field, value);
+    this.log(`Secret stored for ${adapterType}.${field}`);
   }
 
   private getTaskConfig(): TaskConfig | null {

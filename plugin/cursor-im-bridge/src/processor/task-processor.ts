@@ -15,12 +15,16 @@ export interface TaskConfig {
   errorTemplate?: string;
   /** 超时响应模板 */
   timeoutTemplate?: string;
+  /** 队列满时的回复模板 */
+  queueFullTemplate?: string;
   /** 消息过滤：只处理包含指定前缀的消息 */
   triggerPrefix?: string;
   /** 消息过滤：忽略来自这些 senderId 的消息 */
   ignoreSenders?: string[];
   /** 最大并发任务数 */
   maxConcurrent?: number;
+  /** 最大队列长度（防止 DoS），超出时直接拒绝新消息 */
+  maxQueueSize?: number;
 }
 
 export interface TaskResult {
@@ -58,9 +62,11 @@ export class TaskProcessor extends EventEmitter {
       successTemplate: config.successTemplate ?? '{output}',
       errorTemplate: config.errorTemplate ?? '❌ 处理失败: {error}',
       timeoutTemplate: config.timeoutTemplate ?? '⏰ 处理超时，请稍后重试或简化您的请求。',
+      queueFullTemplate: config.queueFullTemplate ?? '⚠️ 当前任务队列已满，请稍后再试。',
       triggerPrefix: config.triggerPrefix ?? '',
       ignoreSenders: config.ignoreSenders ?? ['self'],
       maxConcurrent: config.maxConcurrent ?? 3,
+      maxQueueSize: config.maxQueueSize ?? 20,
     };
   }
 
@@ -76,6 +82,16 @@ export class TaskProcessor extends EventEmitter {
     const prompt = this.extractPrompt(message);
     if (!prompt) {
       return null;
+    }
+
+    // 队列满则拒绝，防止无限堆积造成 OOM
+    if (this.queue.length >= this.config.maxQueueSize) {
+      return {
+        taskId: `rejected-${Date.now()}`,
+        sourceMessage: message,
+        cliResult: { success: false, output: '', error: 'Queue full', exitCode: null, duration: 0 },
+        reply: this.config.queueFullTemplate,
+      };
     }
 
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
