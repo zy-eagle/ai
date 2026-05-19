@@ -1,0 +1,194 @@
+{
+  "name": "cursor-im-bridge",
+  "displayName": "Cursor IM Bridge",
+  "description": "双向通讯桥接插件，支持飞书、企微、Telegram、钉钉及自定义 IM 工具",
+  "version": "0.1.0",
+  "publisher": "omnidev",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursorImBridge.connect",
+        "title": "IM Bridge: Connect"
+      },
+      {
+        "command": "cursorImBridge.disconnect",
+        "title": "IM Bridge: Disconnect"
+      },
+      {
+        "command": "cursorImBridge.sendMessage",
+        "title": "IM Bridge: Send Message"
+      },
+      {
+        "command": "cursorImBridge.showPanel",
+        "title": "IM Bridge: Show Panel"
+      },
+      {
+        "command": "cursorImBridge.configure",
+        "title": "IM Bridge: Configure"
+      },
+      {
+        "command": "cursorImBridge.toggleAutoReply",
+        "title": "IM Bridge: Toggle Auto-Reply"
+      },
+      {
+        "command": "cursorImBridge.processPrompt",
+        "title": "IM Bridge: Process Prompt via CLI"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor IM Bridge",
+      "properties": {
+        "cursorImBridge.adapters": {
+          "type": "array",
+          "default": [],
+          "description": "已启用的 IM 适配器配置列表",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["feishu", "wecom", "telegram", "dingtalk", "custom"],
+                "description": "适配器类型"
+              },
+              "name": {
+                "type": "string",
+                "description": "适配器显示名称"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "config": {
+                "type": "object",
+                "description": "适配器特定配置"
+              }
+            }
+          }
+        },
+        "cursorImBridge.webhookPort": {
+          "type": "number",
+          "default": 3927,
+          "description": "本地 Webhook 接收端口"
+        },
+        "cursorImBridge.autoConnect": {
+          "type": "boolean",
+          "default": false,
+          "description": "启动时自动连接所有已启用的适配器"
+        },
+        "cursorImBridge.logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info",
+          "description": "日志级别"
+        },
+        "cursorImBridge.autoReply.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用自动回复：收到 IM 消息后自动调用 Cursor CLI 处理并回复结果"
+        },
+        "cursorImBridge.autoReply.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Cursor CLI 可执行文件路径（留空自动检测）"
+        },
+        "cursorImBridge.autoReply.cwd": {
+          "type": "string",
+          "default": "",
+          "description": "Cursor CLI 工作目录（留空使用当前工作区）"
+        },
+        "cursorImBridge.autoReply.timeout": {
+          "type": "number",
+          "default": 120000,
+          "description": "Cursor CLI 执行超时时间（毫秒）"
+        },
+        "cursorImBridge.autoReply.triggerPrefix": {
+          "type": "string",
+          "default": "",
+          "description": "消息触发前缀（留空=所有消息触发，设置如 '/ask ' 则仅响应以此开头的消息）"
+        },
+        "cursorImBridge.autoReply.sendProcessingStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "处理前先发送「正在处理」状态消息"
+        },
+        "cursorImBridge.autoReply.processingTemplate": {
+          "type": "string",
+          "default": "⏳ 正在处理您的请求，请稍候...",
+          "description": "处理中状态消息模板"
+        },
+        "cursorImBridge.autoReply.successTemplate": {
+          "type": "string",
+          "default": "{output}",
+          "description": "成功回复模板（支持 {output} {duration} 占位符）"
+        },
+        "cursorImBridge.autoReply.errorTemplate": {
+          "type": "string",
+          "default": "❌ 处理失败: {error}",
+          "description": "失败回复模板（支持 {error} 占位符）"
+        },
+        "cursorImBridge.autoReply.ignoreSenders": {
+          "type": "array",
+          "default": ["self"],
+          "description": "忽略来自这些发送者的消息",
+          "items": { "type": "string" }
+        },
+        "cursorImBridge.autoReply.maxConcurrent": {
+          "type": "number",
+          "default": 3,
+          "description": "最大并发处理任务数"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "im-bridge",
+          "title": "IM Bridge",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "im-bridge": [
+        {
+          "id": "imBridge.channels",
+          "name": "Channels"
+        },
+        {
+          "id": "imBridge.messages",
+          "name": "Messages"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.4.0",
+    "eslint": "^8.56.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "node-fetch": "^3.3.2",
+    "eventsource": "^2.0.2"
+  }
+}
