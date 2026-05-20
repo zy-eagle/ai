@@ -1,30 +1,24 @@
 import { EventEmitter } from 'events';
 import { IMMessage } from '../types';
 import { CursorCLI, CursorCLIOptions, CursorCLIResult } from './cursor-cli';
+import { RiskControl } from './risk-control';
 
 export interface TaskConfig {
-  /** Cursor CLI 配置 */
   cli: CursorCLIOptions;
-  /** 是否发送处理中状态消息 */
   sendProcessingStatus?: boolean;
-  /** 处理中状态消息模板 */
   processingTemplate?: string;
-  /** 成功响应模板 (支持 {output}, {duration} 占位符) */
   successTemplate?: string;
-  /** 失败响应模板 (支持 {error} 占位符) */
   errorTemplate?: string;
-  /** 超时响应模板 */
   timeoutTemplate?: string;
-  /** 队列满时的回复模板 */
   queueFullTemplate?: string;
-  /** 消息过滤：只处理包含指定前缀的消息 */
   triggerPrefix?: string;
-  /** 消息过滤：忽略来自这些 senderId 的消息 */
   ignoreSenders?: string[];
-  /** 最大并发任务数 */
   maxConcurrent?: number;
-  /** 最大队列长度（防止 DoS），超出时直接拒绝新消息 */
   maxQueueSize?: number;
+  /** 风控：是否启用 AI 意图分析 */
+  riskControlEnabled?: boolean;
+  /** 风控：确认超时时间（ms，默认 5 分钟） */
+  riskConfirmTimeout?: number;
 }
 
 export interface TaskResult {
@@ -41,16 +35,16 @@ interface TaskQueueItem {
 }
 
 /**
- * 任务处理器 — 接收 IM 消息，调用 Cursor CLI 处理，生成回复内容
+ * 任务处理器
  *
- * 流程: IM消息 → 过滤 → 提取Prompt → Cursor CLI → 格式化回复
+ * 流程: IM消息 → 过滤 → [风控AI分析] → [确认] → Cursor CLI 执行 → 格式化回复
  */
 export class TaskProcessor extends EventEmitter {
   private cli: CursorCLI;
   private config: Required<TaskConfig>;
+  private riskControl: RiskControl | null = null;
   private queue: TaskQueueItem[] = [];
   private activeCount: number = 0;
-  private processing: boolean = false;
 
   constructor(config: TaskConfig) {
     super();
@@ -67,12 +61,19 @@ export class TaskProcessor extends EventEmitter {
       ignoreSenders: config.ignoreSenders ?? ['self'],
       maxConcurrent: config.maxConcurrent ?? 3,
       maxQueueSize: config.maxQueueSize ?? 20,
+      riskControlEnabled: config.riskControlEnabled ?? true,
+      riskConfirmTimeout: config.riskConfirmTimeout ?? 300000,
     };
+
+    if (this.config.riskControlEnabled) {
+      this.riskControl = new RiskControl({
+        confirmTimeoutMs: this.config.riskConfirmTimeout,
+      });
+    }
   }
 
   /**
    * 处理收到的 IM 消息
-   * 返回 null 表示消息被过滤（不需要处理）
    */
   async processMessage(message: IMMessage): Promise<TaskResult | null> {
     if (!this.shouldProcess(message)) {
@@ -84,7 +85,42 @@ export class TaskProcessor extends EventEmitter {
       return null;
     }
 
-    // 队列满则拒绝，防止无限堆积造成 OOM
+    // 风控：先检查是否是对待确认操作的回复
+    if (this.riskControl) {
+      const confirmReply = this.riskControl.checkReply(
+        message.channelId, message.senderId, prompt
+      );
+
+      if (confirmReply) {
+        if (confirmReply.action === 'confirm') {
+          this.emit('riskConfirmed', {
+            taskId: confirmReply.pending.taskId,
+            prompt: confirmReply.pending.prompt,
+          });
+          return this.executeTask(message, confirmReply.pending.prompt);
+        } else {
+          this.emit('riskCancelled', { taskId: confirmReply.pending.taskId });
+          return {
+            taskId: confirmReply.pending.taskId,
+            sourceMessage: message,
+            cliResult: { success: true, output: '', exitCode: null, duration: 0 },
+            reply: '✅ 操作已取消。',
+          };
+        }
+      }
+
+      // 如果该用户有待确认项，但回复的不是确认/取消，提醒用户
+      if (this.riskControl.hasPending(message.channelId, message.senderId)) {
+        return {
+          taskId: `reminder-${Date.now()}`,
+          sourceMessage: message,
+          cliResult: { success: true, output: '', exitCode: null, duration: 0 },
+          reply: '⏳ 您有一个待确认的高危操作。请先回复 "确认" 执行或 "取消" 放弃，再提交新指令。',
+        };
+      }
+    }
+
+    // 队列满则拒绝
     if (this.queue.length >= this.config.maxQueueSize) {
       return {
         taskId: `rejected-${Date.now()}`,
@@ -94,18 +130,39 @@ export class TaskProcessor extends EventEmitter {
       };
     }
 
-    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    // 风控：语义模式检测
+    if (this.riskControl) {
+      const assessment = this.riskControl.analyze(prompt);
+      this.emit('riskAssessed', { prompt, assessment });
 
-    const item: TaskQueueItem = { id: taskId, message, prompt };
-    this.queue.push(item);
-    this.emit('taskQueued', { taskId, message, prompt });
+      if (this.riskControl.needsConfirmation(assessment)) {
+        const taskId = this.riskControl.createPending(
+          message.channelId, message.senderId, prompt, assessment
+        );
+        const confirmPrompt = this.riskControl.buildConfirmPrompt(assessment);
 
-    return this.processNextInQueue(item);
+        this.emit('riskDetected', { taskId, prompt, assessment });
+
+        return {
+          taskId,
+          sourceMessage: message,
+          cliResult: { success: true, output: '', exitCode: null, duration: 0 },
+          reply: confirmPrompt,
+        };
+      }
+    }
+
+    // 安全或低风险：直接执行
+    return this.executeTask(message, prompt);
   }
 
   /**
-   * 检查 Cursor CLI 是否就绪
+   * 预检：是否该用户有待确认的高危操作（用于跳过"正在处理"消息）
    */
+  hasPendingRisk(channelId: string, senderId: string): boolean {
+    return this.riskControl?.hasPending(channelId, senderId) ?? false;
+  }
+
   async checkReady(): Promise<{ available: boolean; version?: string }> {
     const available = await this.cli.isAvailable();
     if (!available) {
@@ -121,6 +178,15 @@ export class TaskProcessor extends EventEmitter {
 
   getActiveCount(): number {
     return this.activeCount;
+  }
+
+  private async executeTask(message: IMMessage, prompt: string): Promise<TaskResult> {
+    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const item: TaskQueueItem = { id: taskId, message, prompt };
+    this.queue.push(item);
+    this.emit('taskQueued', { taskId, message, prompt });
+
+    return this.processNextInQueue(item);
   }
 
   private async processNextInQueue(item: TaskQueueItem): Promise<TaskResult> {
@@ -167,42 +233,24 @@ export class TaskProcessor extends EventEmitter {
   }
 
   private shouldProcess(message: IMMessage): boolean {
-    if (message.direction === 'outbound') {
-      return false;
-    }
-
-    if (this.config.ignoreSenders.includes(message.senderId)) {
-      return false;
-    }
-
-    if (this.config.triggerPrefix) {
-      if (!message.content.startsWith(this.config.triggerPrefix)) {
-        return false;
-      }
-    }
-
-    if (!message.content.trim()) {
-      return false;
-    }
-
+    if (message.direction === 'outbound') return false;
+    if (this.config.ignoreSenders.includes(message.senderId)) return false;
+    if (this.config.triggerPrefix && !message.content.startsWith(this.config.triggerPrefix)) return false;
+    if (!message.content.trim()) return false;
     return true;
   }
 
   private extractPrompt(message: IMMessage): string {
     let content = message.content.trim();
-
     if (this.config.triggerPrefix && content.startsWith(this.config.triggerPrefix)) {
       content = content.slice(this.config.triggerPrefix.length).trim();
     }
-
     return content;
   }
 
   private formatReply(result: CursorCLIResult): string {
     if (!result.success) {
-      if (result.error?.includes('Timeout')) {
-        return this.config.timeoutTemplate;
-      }
+      if (result.error?.includes('Timeout')) return this.config.timeoutTemplate;
       return this.config.errorTemplate.replace('{error}', result.error || 'Unknown error');
     }
 
@@ -210,12 +258,10 @@ export class TaskProcessor extends EventEmitter {
       .replace('{output}', result.output)
       .replace('{duration}', `${(result.duration / 1000).toFixed(1)}s`);
 
-    // 飞书等 IM 对消息长度有限制，截断过长输出
     const maxLength = 4000;
     if (reply.length > maxLength) {
       reply = reply.slice(0, maxLength - 100) + '\n\n... (输出已截断，完整结果请查看 Cursor)';
     }
-
     return reply;
   }
 }

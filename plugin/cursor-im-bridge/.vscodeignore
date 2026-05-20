@@ -1,7 +1,11 @@
 .vscode/**
 .vscode-test/**
 src/**
-node_modules/**
+node_modules/@types/**
+node_modules/@vscode/**
+node_modules/typescript/**
+node_modules/eslint/**
+node_modules/@eslint/**
 .gitignore
 tsconfig.json
 **/*.ts

@@ -4,6 +4,10 @@
   "description": "双向通讯桥接插件，支持飞书、企微、Telegram、钉钉及自定义 IM 工具",
   "version": "0.1.0",
   "publisher": "omnidev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zy-eagle/omnidev-kit.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -61,7 +65,13 @@
             "properties": {
               "type": {
                 "type": "string",
-                "enum": ["feishu", "wecom", "telegram", "dingtalk", "custom"],
+                "enum": [
+                  "feishu",
+                  "wecom",
+                  "telegram",
+                  "dingtalk",
+                  "custom"
+                ],
                 "description": "适配器类型"
               },
               "name": {
@@ -91,7 +101,12 @@
         },
         "cursorImBridge.logLevel": {
           "type": "string",
-          "enum": ["debug", "info", "warn", "error"],
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
           "default": "info",
           "description": "日志级别"
         },
@@ -142,14 +157,28 @@
         },
         "cursorImBridge.autoReply.ignoreSenders": {
           "type": "array",
-          "default": ["self"],
+          "default": [
+            "self"
+          ],
           "description": "忽略来自这些发送者的消息",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "cursorImBridge.autoReply.maxConcurrent": {
           "type": "number",
           "default": 3,
           "description": "最大并发处理任务数"
+        },
+        "cursorImBridge.autoReply.riskControl.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用风控：高危操作（删除文件、修改数据库、部署等）需二次确认"
+        },
+        "cursorImBridge.autoReply.riskControl.confirmTimeout": {
+          "type": "number",
+          "default": 300000,
+          "description": "风控确认超时时间（毫秒，默认5分钟）"
         }
       }
     },
@@ -186,13 +215,14 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.5.10",
-    "typescript": "^5.4.0",
+    "@vscode/vsce": "^2.22.0",
     "eslint": "^8.56.0",
-    "@vscode/vsce": "^2.22.0"
+    "typescript": "^5.4.0"
   },
   "dependencies": {
-    "ws": "^8.16.0",
+    "@larksuiteoapi/node-sdk": "^1.64.0",
+    "eventsource": "^2.0.2",
     "node-fetch": "^3.3.2",
-    "eventsource": "^2.0.2"
+    "ws": "^8.16.0"
   }
 }

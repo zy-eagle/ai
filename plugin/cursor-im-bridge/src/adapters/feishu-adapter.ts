@@ -7,14 +7,14 @@ import {
   MessageDirection,
 } from '../types';
 import { HttpClient } from '../utils/http-client';
-import WebSocket from 'ws';
+import * as Lark from '@larksuiteoapi/node-sdk';
 
 interface FeishuConfig {
   appId: string;
   appSecret: string;
   /**
    * 连接模式:
-   * - 'websocket' (默认): 使用飞书长连接，不需要公网 URL
+   * - 'websocket' (默认): 使用飞书官方 SDK 长连接，不需要公网 URL
    * - 'webhook': 传统回调模式，需要公网 URL
    */
   mode?: 'websocket' | 'webhook';
@@ -24,27 +24,6 @@ interface FeishuConfig {
   encryptKey?: string;
 }
 
-interface FeishuTokenResponse {
-  code: number;
-  msg: string;
-  tenant_access_token: string;
-  expire: number;
-}
-
-interface FeishuWSEndpointResponse {
-  code: number;
-  msg: string;
-  data: {
-    URL: string;
-    ClientConfig: {
-      ReconnectCount: number;
-      ReconnectInterval: number;
-      ReconnectNonce: number;
-      PingInterval: number;
-    };
-  };
-}
-
 export class FeishuAdapter extends BaseAdapter {
   readonly type = AdapterType.Feishu;
   readonly displayName = '飞书 (Feishu)';
@@ -52,11 +31,8 @@ export class FeishuAdapter extends BaseAdapter {
   private accessToken: string = '';
   private tokenExpiry: number = 0;
   private http: HttpClient;
-  private ws: WebSocket | null = null;
-  private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private wsClient: Lark.WSClient | null = null;
   private tokenRefreshTimer: ReturnType<typeof setInterval> | null = null;
-  private reconnectCount: number = 0;
-  private maxReconnects: number = 10;
 
   private get feishuConfig(): FeishuConfig {
     return this._config.config as unknown as FeishuConfig;
@@ -84,13 +60,11 @@ export class FeishuAdapter extends BaseAdapter {
   }
 
   protected async doDisconnect(): Promise<void> {
-    if (this.ws) {
-      this.ws.close(1000, 'Client disconnect');
-      this.ws = null;
-    }
-    if (this.wsReconnectTimer) {
-      clearTimeout(this.wsReconnectTimer);
-      this.wsReconnectTimer = null;
+    if (this.wsClient) {
+      try {
+        (this.wsClient as unknown as { close?: () => void }).close?.();
+      } catch { /* best effort */ }
+      this.wsClient = null;
     }
     if (this.tokenRefreshTimer) {
       clearInterval(this.tokenRefreshTimer);
@@ -174,111 +148,53 @@ export class FeishuAdapter extends BaseAdapter {
     this.processEvent(event);
   }
 
-  // ─── WebSocket 长连接 ───────────────────────────────────────────────
+  // ─── WebSocket 长连接 (使用飞书官方 SDK) ──────────────────────────
 
   private async connectWebSocket(): Promise<void> {
-    const endpoint = await this.getWSEndpoint();
-    await this.establishWSConnection(endpoint);
-  }
+    const self = this;
 
-  private async getWSEndpoint(): Promise<FeishuWSEndpointResponse['data']> {
-    const resp = await this.http.post<FeishuWSEndpointResponse>(
-      '/callback/ws/endpoint',
-      {},
-      { Authorization: `Bearer ${this.accessToken}` }
-    );
-
-    if (resp.code !== 0) {
-      throw new Error(`Feishu WS endpoint failed: ${resp.msg}`);
-    }
-
-    this.maxReconnects = resp.data.ClientConfig.ReconnectCount || 10;
-    return resp.data;
-  }
-
-  private async establishWSConnection(endpoint: FeishuWSEndpointResponse['data']): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(endpoint.URL, {
-        headers: {
-          'User-Agent': 'CursorIMBridge/0.1.0',
-        },
-      });
-
-      ws.on('open', () => {
-        this.ws = ws;
-        this.reconnectCount = 0;
-        resolve();
-      });
-
-      ws.on('message', (data) => {
-        try {
-          const payload = JSON.parse(data.toString());
-          this.handleWSMessage(payload);
-        } catch (err) {
-          this.emit('error', new Error(`WS parse error: ${err}`));
-        }
-      });
-
-      ws.on('close', (code, reason) => {
-        this.ws = null;
-        if (!this.abortController?.signal.aborted) {
-          this.scheduleReconnect(endpoint);
-        }
-      });
-
-      ws.on('error', (err) => {
-        if (!this.ws) {
-          reject(err);
-        } else {
-          this.emit('error', err);
-        }
-      });
-
-      ws.on('ping', () => {
-        ws.pong();
-      });
+    const eventDispatcher = new Lark.EventDispatcher({}).register({
+      'im.message.receive_v1': (data: unknown) => {
+        self.handleSDKMessage(data);
+      },
     });
+
+    this.wsClient = new Lark.WSClient({
+      appId: this.feishuConfig.appId,
+      appSecret: this.feishuConfig.appSecret,
+      loggerLevel: Lark.LoggerLevel.warn,
+    });
+
+    await this.wsClient.start({ eventDispatcher });
   }
 
-  private handleWSMessage(payload: Record<string, unknown>): void {
-    const type = payload.type as string;
+  private handleSDKMessage(data: unknown): void {
+    try {
+      const event = data as Record<string, unknown>;
+      const message = event.message as Record<string, unknown> | undefined;
+      const sender = event.sender as Record<string, unknown> | undefined;
 
-    if (type === 'pong' || type === 'ping') {
-      return;
-    }
-
-    // 飞书 WS 事件格式
-    if (payload.header || payload.event) {
-      this.processEvent(payload);
-    }
-
-    // 封装格式：data 字段包含实际事件
-    if (payload.data && typeof payload.data === 'object') {
-      this.processEvent(payload.data as Record<string, unknown>);
-    }
-  }
-
-  private scheduleReconnect(endpoint: FeishuWSEndpointResponse['data']): void {
-    if (this.reconnectCount >= this.maxReconnects) {
-      this.emit('error', new Error('Feishu WS max reconnection attempts exceeded'));
-      this.setStatus('error' as never);
-      return;
-    }
-
-    this.reconnectCount++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectCount) + Math.random() * 1000, 30000);
-
-    this.wsReconnectTimer = setTimeout(async () => {
-      try {
-        const newEndpoint = await this.getWSEndpoint();
-        await this.establishWSConnection(newEndpoint);
-      } catch {
-        this.scheduleReconnect(endpoint);
+      if (message && sender) {
+        const msg: IMMessage = {
+          id: (message.message_id as string) || `feishu-${Date.now()}`,
+          adapterId: this.id,
+          adapterType: AdapterType.Feishu,
+          direction: MessageDirection.Inbound,
+          channelId: (message.chat_id as string) || '',
+          senderId: ((sender.sender_id as Record<string, string>)?.user_id) || 'unknown',
+          senderName: (sender.sender_type as string) || undefined,
+          content: this.parseMessageContent(message.content as string),
+          contentType: 'text',
+          timestamp: parseInt(message.create_time as string) || Date.now(),
+        };
+        this.emit('message', msg);
       }
-    }, delay);
+    } catch (err) {
+      this.emit('error', new Error(`Failed to parse Feishu message: ${err}`));
+    }
   }
 
-  // ─── 通用事件处理 ───────────────────────────────────────────────────
+  // ─── 通用事件处理 (webhook 模式) ───────────────────────────────────
 
   private processEvent(event: Record<string, unknown>): void {
     const header = event.header as Record<string, unknown> | undefined;
@@ -310,7 +226,12 @@ export class FeishuAdapter extends BaseAdapter {
   // ─── Token 管理 ────────────────────────────────────────────────────
 
   private async refreshToken(): Promise<void> {
-    const resp = await this.http.post<FeishuTokenResponse>(
+    const resp = await this.http.post<{
+      code: number;
+      msg: string;
+      tenant_access_token: string;
+      expire: number;
+    }>(
       '/auth/v3/tenant_access_token/internal',
       {
         app_id: this.feishuConfig.appId,

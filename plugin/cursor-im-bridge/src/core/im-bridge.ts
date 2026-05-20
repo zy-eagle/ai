@@ -73,7 +73,10 @@ export class IMBridge {
 
   private async initTaskProcessor(): Promise<void> {
     const taskConfig = this.getTaskConfig();
-    if (!taskConfig) return;
+    if (!taskConfig) {
+      this.log('Task Processor skipped: autoReply not enabled in settings');
+      return;
+    }
 
     this.taskProcessor = new TaskProcessor(taskConfig);
     this.autoReplyEnabled = true;
@@ -110,25 +113,35 @@ export class IMBridge {
       if (!this.autoReplyEnabled || !this.taskProcessor) return;
 
       try {
-        // 发送处理中状态
+        // 发送"正在处理"状态（用户有待确认操作时跳过）
         const processingConfig = this.getTaskConfig();
-        if (processingConfig?.sendProcessingStatus) {
+        const hasPending = this.taskProcessor.hasPendingRisk(msg.channelId, msg.senderId);
+        if (processingConfig?.sendProcessingStatus && !hasPending) {
           const statusMsg = processingConfig.processingTemplate || '⏳ 正在处理您的请求，请稍候...';
           await this.messageBus.send(msg.adapterId, msg.channelId, statusMsg).catch(() => {});
         }
 
-        // 调用 Cursor CLI 处理
         const result = await this.taskProcessor.processMessage(msg);
+        if (!result) return;
 
-        if (result) {
-          // 将结果回复到原来的 channel
-          await this.messageBus.send(msg.adapterId, msg.channelId, result.reply);
-          this.log(`Auto-reply sent to ${msg.channelId} via ${msg.adapterType}`);
-        }
+        await this.messageBus.send(msg.adapterId, msg.channelId, result.reply);
+        this.log(`Auto-reply sent to ${msg.channelId} via ${msg.adapterType}`);
       } catch (err) {
         this.log(`Auto-reply error: ${err}`, 'error');
       }
     });
+
+    if (this.taskProcessor) {
+      this.taskProcessor.on('riskDetected', ({ taskId, assessment }: { taskId: string; assessment: { level: string; category: string } }) => {
+        this.log(`Risk detected [${taskId}]: ${assessment.category} (${assessment.level})`);
+      });
+      this.taskProcessor.on('riskConfirmed', ({ taskId }: { taskId: string }) => {
+        this.log(`Risk confirmed [${taskId}], executing...`);
+      });
+      this.taskProcessor.on('riskCancelled', ({ taskId }: { taskId: string }) => {
+        this.log(`Risk cancelled [${taskId}]`);
+      });
+    }
   }
 
   /**
@@ -214,7 +227,10 @@ export class IMBridge {
     return this.autoReplyEnabled;
   }
 
-  setAutoReply(enabled: boolean): void {
+  async setAutoReply(enabled: boolean): Promise<void> {
+    if (enabled && !this.taskProcessor) {
+      await this.initTaskProcessor();
+    }
     this.autoReplyEnabled = enabled;
     this.log(`Auto-reply ${enabled ? 'enabled' : 'disabled'}`);
     this.updateStatusBar();
@@ -374,6 +390,8 @@ export class IMBridge {
       triggerPrefix: config.get<string>('autoReply.triggerPrefix', ''),
       ignoreSenders: config.get<string[]>('autoReply.ignoreSenders', ['self']),
       maxConcurrent: config.get<number>('autoReply.maxConcurrent', 3),
+      riskControlEnabled: config.get<boolean>('autoReply.riskControl.enabled', true),
+      riskConfirmTimeout: config.get<number>('autoReply.riskControl.confirmTimeout', 300000),
     };
   }
 
